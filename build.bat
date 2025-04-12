@@ -1,0 +1,1 @@
+gcc -Wall -I./include -o iso.exe main.c -L./lib -lraylibwin -lopengl32 -lgdi32 -lwinmm -lm
