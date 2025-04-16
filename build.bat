@@ -1,1 +1,2 @@
-gcc -Wall -I./include -o iso.exe main.c -L./lib -lraylibwin -lopengl32 -lgdi32 -lwinmm -lm
+:: gcc -Wall -I./include -o iso.exe main.c -L./lib -lraylibwin -lopengl32 -lgdi32 -lwinmm -lm
+g++ -Wall -I./include -o iso.exe main.cpp baseclasses.cpp -L./lib -lraylibwin -lopengl32 -lgdi32 -lwinmm -lm
