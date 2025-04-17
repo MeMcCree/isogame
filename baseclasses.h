@@ -4,6 +4,8 @@
 #include <raylib.h>
 #include <raymath.h>
 
+Vector2 to_screen(Vector3 pos);
+
 class sprite_t;
 
 class action_t {

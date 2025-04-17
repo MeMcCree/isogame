@@ -1,0 +1,1 @@
+g++ -Wall -I./include -o iso.exe main.cpp baseclasses.cpp ./lib/libraylib.a -lc -lm
