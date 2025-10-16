@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <cassert>
+#include <algorithm>
 #include <raylib.h>
 #include <raymath.h>
 #include "baseclasses.h"
@@ -18,6 +19,8 @@ int num_tiles_y = 0;
 
 constexpr int MAP_WIDTH = 5;
 constexpr int MAP_HEIGHT = 5;
+
+#define VEC3UNPACK(v) v.x, v.y, v.z
 
 enum movedir_e {
     MOVE_SOUTH, MOVE_WEST, MOVE_NORTH, MOVE_EAST
@@ -54,6 +57,18 @@ public:
     }
 };
 
+class trap_t : public sprite_t {
+public:
+    bool is_attacking = false;
+    bool is_able_to_attack = true;
+
+    void update(float dt) override {
+        if (action != nullptr) {
+            action->step((void*)this, dt);
+        }
+    }
+};
+
 class player_move_anim : action_t {
 private:
     int start_idx = 0, end_idx = 1;
@@ -64,11 +79,10 @@ public:
     player_move_anim(int start_idx, int end_idx, float time, float delay = 0.0f)
     : start_idx(start_idx), end_idx(end_idx), time(time), delay(delay) {}
 
+    void finish(void* anim_ent) override {}
+
     bool is_finished() override {
         return accum - delay >= time;
-    }
-
-    void finish(void* anim_ent) override {
     }
 
     void step(void* anim_ent, float dt) override {
@@ -86,10 +100,6 @@ public:
         }
     }
 };
-
-float linear_move_func(float x) {
-    return x;
-}
 
 class linear_move : action_t {
 public:
@@ -127,6 +137,30 @@ public:
     }
 };
 
+class trap_move_back : public linear_move {
+public:
+    trap_move_back(Vector3 start, Vector3 end, float time, float delay = 0.0f, function<float(float)> f = [](float x) { return x; })
+    : linear_move(start, end, time, delay, f) {}
+
+    void finish(void* ent) override {
+        trap_t* trap = (trap_t*)ent;
+        trap->is_able_to_attack = true;
+    }
+};
+
+class trap_move : public linear_move {
+public:
+    trap_move(Vector3 start, Vector3 end, float time, float delay = 0.0f, function<float(float)> f = [](float x) { return x; })
+    : linear_move(start, end, time, delay, f) {}
+
+    void finish(void* ent) override {
+        trap_t* trap = (trap_t*)ent;
+        trap->is_attacking = false;
+        trap->is_able_to_attack = false;
+        trap->set_action(new trap_move_back(end, start, 1.5f), true);
+    }
+};
+
 class player_move : public linear_move {
 public:
     player_move(Vector3 start, Vector3 end, float time, float delay = 0.0f, function<float(float)> f = [](float x) { return x; })
@@ -152,7 +186,7 @@ public:
 };
 
 float nearness(sprite_t* sprite) {
-    return sprite->pos.x + sprite->pos.y - sprite->pos.z;
+    return sprite->pos.x + sprite->pos.y - sprite->pos.z + sprite->order_z;
 }
 
 int main(int argc, char* argv[]) {
@@ -177,8 +211,8 @@ int main(int argc, char* argv[]) {
 
     player_t player;
     player.atlas_idx = 2;
-    player.pos.z = -16.0f;
-    player.draw_z = false;
+    player.pos.z = 0;
+    player.order_z = 1;
     movedir_e movedir = MOVE_SOUTH;
 
     bool is_tile_falling = 0;
@@ -190,6 +224,11 @@ int main(int argc, char* argv[]) {
     }
 
     vector<sprite_t*> sprites;
+
+    trap_t trap;
+    trap.is_able_to_attack = true;
+    trap.pos = (Vector3){0, 0, -16};
+    trap.atlas_idx = 1;
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
@@ -217,8 +256,6 @@ int main(int argc, char* argv[]) {
             player.is_moving = true;
         }
 
-        // player_fall: z 0 -> 512, 2.5s, 0.15s delay
-        // tile_fall:   z 0 -> 512, 2.0s, 1.0s delay
         player.update(dt);
 
         for (int i = 0; i < MAP_HEIGHT*MAP_WIDTH; i++) {
@@ -230,10 +267,28 @@ int main(int argc, char* argv[]) {
             if (map[tile_idx].action == nullptr) {
                 is_tile_falling = 1;
                 map[tile_idx].atlas_idx = 0;
-                map[tile_idx].draw_z = true;
                 Vector3 end = map[tile_idx].pos;
                 end.z += 512.0f;
                 map[tile_idx].set_action(new tile_move(map[tile_idx].pos, end, 2.0f, 1.0f, [](float x) { return x*x; }), true);
+            }
+        }
+
+        if (trap.is_able_to_attack) {
+            trap.pos.x = rand() % MAP_WIDTH;
+            trap.pos.y = rand() % MAP_HEIGHT;
+            trap.set_action(new trap_move(trap.pos, (Vector3){trap.pos.x, trap.pos.y, trap.pos.z + 16}, 0.25f), true);
+            trap.is_able_to_attack = false;
+
+            if (trap.pos.x == player.pos.x && trap.pos.y == player.pos.y && !player.is_falling) {
+                player.is_moving = 1;
+                player.is_falling = 1;
+
+                player.order_z = 0;
+                player.atlas_idx = 5;
+
+                Vector3 end = player.pos;
+                end.z += 512.0f;
+                player.set_action(new player_move(player.pos, end, 2.5f, 0.15f, [](float x) { return x*x; }), true);                
             }
         }
 
@@ -246,8 +301,7 @@ int main(int argc, char* argv[]) {
             player.is_moving = 1;
             player.is_falling = 1;
 
-            player.pos.z = 0.0f;
-            player.draw_z = 1;
+            player.order_z = 0;
             player.atlas_idx = 5;
 
             Vector3 end = player.pos;
@@ -260,10 +314,13 @@ int main(int argc, char* argv[]) {
             sprites.push_back((sprite_t*)&map[i]);
         }
 
+        trap.update(dt);
+
+        sprites.push_back((sprite_t*)&trap);
         sprites.push_back((sprite_t*)&player);
         sprite_t eyes;
         eyes.pos = player.pos;
-        eyes.draw_z = player.draw_z;
+        eyes.order_z = player.order_z + 1;
         eyes.atlas_idx = player.atlas_idx + 9;
         switch (movedir) {
             case MOVE_SOUTH: {
@@ -277,28 +334,22 @@ int main(int argc, char* argv[]) {
             default: break;
         }
 
-        for (int i = 0; i < (int)sprites.size() - 1; i++) {
-            for (int j = i + 1; j < sprites.size(); j++) {
-                if (nearness(sprites[i]) > nearness(sprites[j])) {
-                    sprite_t* temp = sprites[i];
-                    sprites[i] = sprites[j];
-                    sprites[j] = temp;
-                }
-            }
-        }
+        sort(sprites.begin(), sprites.end(), [](sprite_t* a, sprite_t* b) {
+            return nearness(a) < nearness(b);
+        });
 
         BeginDrawing();
             ClearBackground(BLACK);
             BeginMode2D(camera);
-                for (int i = 0; i < sprites.size(); i++) {
+                for (size_t i = 0; i < sprites.size(); i++) {
                     sprites[i]->draw();
                 }
-            // player.draw();
-            // switch (movedir) {
-            //     case MOVE_SOUTH: case MOVE_WEST: eyes.draw(); break;
-            //     default: break;
-            // }
             EndMode2D();
+            DrawText(TextFormat("trap: %d, %d, %p", trap.is_able_to_attack, trap.is_attacking, trap.action), 0, 16, 16, RAYWHITE);
+            if (trap.action != nullptr) {
+                linear_move* move = (linear_move*)trap.action;
+                DrawText(TextFormat("(%f, %f, %f) -> (%f, %f, %f)", VEC3UNPACK(move->start), VEC3UNPACK(move->end)), 0, 32, 16, RAYWHITE);
+            }
         EndDrawing();
     }
 

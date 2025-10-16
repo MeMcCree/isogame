@@ -54,7 +54,7 @@ void sprite_t::draw() {
         .width = (this->flip ? -1 : 1) * SPRITE_WIDTH,
         .height = SPRITE_HEIGHT
     };
-    DrawTextureRec(atlas_texture, src, to_screen((Vector3){this->pos.x, this->pos.y, (this->draw_z ? this->pos.z : 0.0f)}), WHITE);
+    DrawTextureRec(atlas_texture, src, to_screen((Vector3){this->pos.x, this->pos.y, this->pos.z}), WHITE);
 }
 
 animatable_t::~animatable_t() {
